@@ -14,9 +14,7 @@ EEG_CHANNEL_DICT = {k:i for i,k in enumerate(EEG_CHANNEL_LIST)}
 
 
 class EEGAudioLoader(torch.utils.data.Dataset):
-    """
-        loads EEG and audio pairs
-    """
+
     def __init__(self, audiopaths_and_eeg, hparams):
         self.audiopaths_and_eeg = load_filepaths_and_eeg(audiopaths_and_eeg)
         self.data_root_dir = hparams.data_root_dir
@@ -69,13 +67,16 @@ class EEGAudioLoader(torch.utils.data.Dataset):
         audio, sampling_rate = load_wav_to_torch(filename)
         if sampling_rate != self.sampling_rate:
             raise ValueError("{} {} SR doesn't match target {} SR".format(
-                sampling_rate, self.sampling_rate))
+                filename, sampling_rate, self.sampling_rate))
         audio_norm = audio / self.max_wav_value
         audio_norm = audio_norm.unsqueeze(0)
         spec = spectrogram_torch(audio_norm, self.filter_length,
             self.sampling_rate, self.hop_length, self.win_length,
             center=False)
-        spec = torch.squeeze(spec, 0)
+        # Remove batch dimension but ensure we always have [freq, time]
+        spec = torch.squeeze(spec)
+        while spec.dim() < 2:
+            spec = spec.unsqueeze(1)
         return spec, audio_norm
     
     def get_eeg(self, filename):
@@ -99,17 +100,11 @@ class EEGAudioLoader(torch.utils.data.Dataset):
 
 
 class EEGAudioCollate():
-    """ Zero-pads model inputs and targets
-    """
+
     def __init__(self, return_ids=False):
         self.return_ids = return_ids
 
     def __call__(self, batch):
-        """Collate's training batch from normalized eeg and audio
-        PARAMS
-        ------
-        batch: [eeg, spec_normalized, wav_normalized]
-        """
         # Right zero-pad all one-hot text sequences to max input length
         _, ids_sorted_decreasing = torch.sort(
             torch.LongTensor([x[0].size(1) for x in batch]), # eeg, spec, wav
@@ -117,6 +112,7 @@ class EEGAudioCollate():
 
         max_eeg_len = max([x[0].size(1) for x in batch])
         max_spec_len = max([x[1].size(1) for x in batch])
+
         max_wav_len = max([x[2].size(1) for x in batch])
 
 
