@@ -8,6 +8,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch.cuda.amp import autocast, GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from scipy.io.wavfile import write
@@ -49,7 +50,11 @@ def main():
   os.environ['MASTER_PORT'] = '7000'
 
   hps = utils.get_hparams()
-  run(rank=0, n_gpus=1, hps=hps) # using only single GPU
+  
+  if n_gpus > 1:
+      mp.spawn(run, nprocs=n_gpus, args=(n_gpus, hps,))
+  else:
+      run(0, 1, hps)
 
 
 def run(rank, n_gpus, hps):
